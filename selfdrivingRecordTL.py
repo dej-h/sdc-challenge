@@ -641,6 +641,8 @@ def draw_bounding_boxes(image, detections, focal_length):
         'Speed-limit-20km-h': 0.6,
         'Traffic Light Green': 0.07,
         'Traffic Light Red': 0.07,
+        'Car': 1.8,
+        'Person': 0.5,
         'Unknown': 0.5
     }
     real_heights = {
@@ -649,6 +651,8 @@ def draw_bounding_boxes(image, detections, focal_length):
         'Speed-limit-20km-h': 0.6,
         'Traffic Light Green': 0.3,
         'Traffic Light Red': 0.3,
+        'Car': 1.8,
+        'Person': 2.0,
         'Unknown': 0.5
         }
     font_scale = 0.5
@@ -714,15 +718,19 @@ def process_detections(pred, frame, img_shape, conf_thres=0.25, iou_thres=0.45, 
             confidence = conf.item()
             class_id = int(cls.item())
             if class_id == 0:
-                obj_class = 'Speed-limit-10km-h'
+                obj_class = 'Car'
             elif class_id == 1:
-                obj_class = 'Speed-limit-15km-h'
+                obj_class = 'Person'
             elif class_id == 2:
-                obj_class = 'Speed-limit-20km-h'
+                obj_class = 'Speed-limit-10km-h-'
             elif class_id == 3:
-                obj_class = 'Traffic Light Green'
+                obj_class = 'Speed-limit-15km-h-'
             elif class_id == 4:
-                obj_class = 'Traffic Light Red'
+                obj_class = 'Speed-limit-20km-h-'
+            elif class_id == 5:
+                obj_class = 'TrafficLight-green'
+            elif class_id == 6:
+                obj_class = 'TrafficLight-red'
             else:
                 obj_class = 'Unknown'
 
@@ -779,52 +787,56 @@ def initialize(weights_path, output_dir_base):
     return quantized_model, device, gui_available
 
 
-    frame = cv2.imread(image_path)
+    # frame = cv2.imread(image_path)
 
-    if frame is None:
-        print(f"Failed to read the image at {image_path}. Skipping.")
-        return None, None
+    # if frame is None:
+    #     print(f"Failed to read the image at {image_path}. Skipping.")
+    #     return None, None
 
-    # Crop the top right portion of the image
-    height, width, _ = frame.shape
-    top_right_frame = frame[:height // 2, width // 2:]
+    # # Crop the top right portion of the image
+    # height, width, _ = frame.shape
+    # top_right_frame = frame[:height // 2, width // 2:]
 
-    # Ensure the cropped image is resized to the desired dimensions (multiples of model's stride)
-    stride = 32
-    original_height, original_width = top_right_frame.shape[:2]
-    desired_height = ((original_height // stride) + 1) * stride
-    desired_width = ((original_width // stride) + 1) * stride
-    resized_top_right_frame = cv2.resize(top_right_frame, (desired_width, desired_height))
+    # # Ensure the cropped image is resized to the desired dimensions (multiples of model's stride)
+    # stride = 32
+    # original_height, original_width = top_right_frame.shape[:2]
+    # desired_height = ((original_height // stride) + 1) * stride
+    # desired_width = ((original_width // stride) + 1) * stride
+    # resized_top_right_frame = cv2.resize(top_right_frame, (desired_width, desired_height))
 
-    # Process the resized cropped frame with YOLOv5 detection
-    pred, img_shape = run_inference(model, resized_top_right_frame, device)
-    detections = process_detections(pred, resized_top_right_frame, img_shape)
-    processed_top_right_frame = draw_bounding_boxes(resized_top_right_frame, detections, focal_length=540)
+    # # Process the resized cropped frame with YOLOv5 detection
+    # pred, img_shape = run_inference(model, resized_top_right_frame, device)
+    # detections = process_detections(pred, resized_top_right_frame, img_shape)
+    # processed_top_right_frame = draw_bounding_boxes(resized_top_right_frame, detections, focal_length=540)
 
-    # Resize the processed top right frame back to original dimensions
-    processed_top_right_frame = cv2.resize(processed_top_right_frame, (original_width, original_height))
+    # # Resize the processed top right frame back to original dimensions
+    # processed_top_right_frame = cv2.resize(processed_top_right_frame, (original_width, original_height))
 
-    # Place the processed top right frame back onto the original frame
-    frame[:height // 2, width // 2:] = processed_top_right_frame
+    # # Place the processed top right frame back onto the original frame
+    # frame[:height // 2, width // 2:] = processed_top_right_frame
 
-    if gui_available:
-        # Display the processed frame
-        cv2.imshow('Processed Frame', frame)
-    else:
-        if frame_index % save_frequency == 0:
-            save_path = os.path.join(no_gui_save_dir, f"{frame_index:04d}.jpg")
-            cv2.imwrite(save_path, frame)
-            print(f"\nSaved Frame: {save_path}")
+    # if gui_available:
+    #     # Display the processed frame
+    #     cv2.imshow('Processed Frame', frame)
+    # else:
+    #     if frame_index % save_frequency == 0:
+    #         save_path = os.path.join(no_gui_save_dir, f"{frame_index:04d}.jpg")
+    #         cv2.imwrite(save_path, frame)
+    #         print(f"\nSaved Frame: {save_path}")
 
-    return detections, frame
+    # return detections, frame
 
 def process_single_image(model, device, frame):
+    global DOUBLE_SIDE
+    global TRIPLE_SIDE
     real_widths = {
         'Speed-limit-10km-h': 0.6,
         'Speed-limit-15km-h': 0.6,
         'Speed-limit-20km-h': 0.6,
         'Traffic Light Green': 0.07,
         'Traffic Light Red': 0.07,
+        'Car': 1.8,
+        'Person': 0.5,
         'Unknown': 0.5
     }
     real_heights = {
@@ -833,6 +845,8 @@ def process_single_image(model, device, frame):
         'Speed-limit-20km-h': 0.6,
         'Traffic Light Green': 0.3,
         'Traffic Light Red': 0.3,
+        'Car': 1.8,
+        'Person': 2.0,
         'Unknown': 0.5
         }
     
@@ -844,6 +858,8 @@ def process_single_image(model, device, frame):
     # Crop the top right portion of the image
     top_right_frame = frame[:height // 2, width // 2:]
 
+   
+        
     # Ensure the cropped image is resized to the desired dimensions (multiples of model's stride)
     stride = 32
     original_height, original_width = top_right_frame.shape[:2]
@@ -857,8 +873,17 @@ def process_single_image(model, device, frame):
     
     # Generate dictionary with detection details
     detection_info = []
+    # top right offset
+    top_right_offset = (0, width //2)
     for det in detections:
         x1, y1, x2, y2 = det['bbox']
+        #Compute x and y offset
+        x1 += top_right_offset[1]
+        y1 += top_right_offset[0]
+        x2 += top_right_offset[1]
+        y2 += top_right_offset[0]
+        #Compute the real widths and heights
+        
         real_width_m = real_widths.get(det['class'], 0.5)
         real_height_m = real_heights.get(det['class'], 0.5)
         distance = estimate_distance(x1,y1,x2,y2,real_width_m,real_height_m)
@@ -867,7 +892,53 @@ def process_single_image(model, device, frame):
             'bbox': det['bbox'],
             'distance': distance
         })
-
+        
+    if DOUBLE_SIDE or TRIPLE_SIDE:
+        # Crop the top left portion of the image
+        top_left_frame = frame[:height // 2, :width // 2]
+        resized_top_left_frame = cv2.resize(top_left_frame, (desired_width, desired_height))
+        pred, img_shape = run_inference(model, resized_top_left_frame, device)
+        detections = process_detections(pred, resized_top_left_frame, img_shape)
+        
+        top_left_offset = (0, 0)
+        for det in detections:
+            x1, y1, x2, y2 = det['bbox']
+            x1 += top_left_offset[1]
+            y1 += top_left_offset[0]
+            x2 += top_left_offset[1]
+            y2 += top_left_offset[0]
+            real_width_m = real_widths.get(det['class'], 0.5)
+            real_height_m = real_heights.get(det['class'], 0.5)
+            distance = estimate_distance(x1,y1,x2,y2,real_width_m,real_height_m)
+            detection_info.append({
+                'class': det['class'],
+                'bbox': det['bbox'],
+                'distance': distance
+            })
+        if TRIPLE_SIDE:
+            #Crop the top middle portion of the image
+            top_middle_frame = frame[:height // 2, width // 4:3*width // 4]
+            resized_top_middle_frame = cv2.resize(top_middle_frame, (desired_width, desired_height))
+            pred, img_shape = run_inference(model, resized_top_middle_frame, device)
+            detections = process_detections(pred, resized_top_middle_frame, img_shape)
+            
+            top_middle_offset = (0, width // 4)
+            for det in detections:
+                x1, y1, x2, y2 = det['bbox']
+                x1 += top_middle_offset[1]
+                y1 += top_middle_offset[0]
+                x2 += top_middle_offset[1]
+                y2 += top_middle_offset[0]
+                
+                real_width_m = real_widths.get(det['class'], 0.5)
+                real_height_m = real_heights.get(det['class'], 0.5)
+                distance = estimate_distance(x1,y1,x2,y2,real_width_m,real_height_m)
+                detection_info.append({
+                    'class': det['class'],
+                    'bbox': det['bbox'],
+                    'distance': distance
+                })
+                
     return detection_info
 
 
@@ -879,11 +950,13 @@ def traffic_object_detection(frame_queue, state_queue, model, device):
     # Set distance threshold for red light/traffic sign detection
     red_light_distance_threshold = 5  # meters
     speed_sign_distance_threshold = 10  # meters
+    person_distance_threshold = 10 # meters
 
     # Memory buffers for red lights and speed signs
     red_light_memory = collections.deque(maxlen=5)
     speed_sign_memory = collections.deque(maxlen=5)
-
+    person_memory = collections.deque(maxlen=5)
+    
     saw_red_light = False
     last_speed_limit = 10 #  this sets the initial speed of the car
 
@@ -911,6 +984,18 @@ def traffic_object_detection(frame_queue, state_queue, model, device):
             # Traffic lights
             closest_traffic_light_distance = np.inf
             bool_saw_red_light = False
+            
+            #People
+            initial_person_position = "None"
+            current_person_position = "None"
+            closest_person_distance = np.inf
+            
+            temp_initial_person_position = "None"
+            temp_current_person_position = "None"
+            
+            # Cars
+            car_spotted = False
+            #TODO: Implement logic to detect cars
 
             for det in dets:
                 # First check for traffic lights
@@ -922,18 +1007,57 @@ def traffic_object_detection(frame_queue, state_queue, model, device):
                         closest_speed_sign_distance = det['distance']
                         closest_seen_speed_limit = int(det['class'].split('-')[2].replace('km', ''))
                         bool_saw_speed_sign = True
+                elif det['class'] == 'Person':
+                    closest_person_distance = min(closest_person_distance, det['distance'])
+                    #Initialize person position
+                    if initial_person_position == "None":
+                        temp_initial_person_position = "Right" if det['bbox'][0] > width // 2 else "Left"
+                        temp_current_person_position = "Right" if det['bbox'][0] > width // 2 else "Left"
+                        
+                    #Update person position if it was right
+                    elif initial_person_position == "Right":
+                        if (det['bbox'][0] > width // 4 and  det['bbox'][0] < 3*width // 4):
+                            temp_current_person_position = "Middle"
+                        elif det['bbox'][0] < width // 4:
+                            temp_current_person_position = "Left"
+                        else:
+                            temp_current_person_position = "Right"
+                    
+                    #Update person position if it was left
+                    elif initial_person_position == "Left":
+                        if (det['bbox'][0] > width // 4 and  det['bbox'][0] < 3*width // 4):
+                            temp_current_person_position = "Middle"
+                        elif det['bbox'][0] > width*3 // 4:
+                            temp_current_person_position = "Right"
+                        else:
+                            temp_current_person_position = "Left"
+                    #TODO: Implement logic to detect people
+                    
 
             # Update memory buffers
             red_light_memory.append(bool_saw_red_light and closest_traffic_light_distance < red_light_distance_threshold)
             speed_sign_memory.append(bool_saw_speed_sign and closest_speed_sign_distance < speed_sign_distance_threshold and closest_seen_speed_limit)
-
+            person_memory.append(closest_person_distance < person_distance_threshold)
+            
             # Check the memory buffers
             saw_red_light = all(red_light_memory)
             last_speed_limit = closest_seen_speed_limit if all(speed_sign_memory) else last_speed_limit
+            
+            if all(person_memory):
+                initial_person_position = temp_initial_person_position
+                current_person_position = temp_current_person_position
+            
+            #Check if person memory is all false
+            if not any(person_memory):
+                initial_person_position = "None"
+                current_person_position = "None"
 
             new_state = {
                 "spotted_red_light": saw_red_light,
-                "Speed limit": last_speed_limit
+                "Speed limit": last_speed_limit,
+                "Initial Person Position": initial_person_position,
+                "Current Person Position": current_person_position,
+                "Car Spotted": car_spotted
             }
 
             state_queue.append(new_state)
@@ -981,6 +1105,17 @@ def calculate_throttle_based_on_state(state,max_car_speed=20):
     # Replace with your actual throttle calculation logic
     if state["spotted_red_light"]:
         return 0  # Stop if red light is spotted
+    
+    elif state["Car Spotted"]:
+        #TODO: Implement logic to slow down if a car is spotted
+        return 10
+    
+    elif (state["Current Person Position"] == "Right" or state["Current Person Position"] =="Middle") and state["Initial Person Position"] == "Right":
+        return 0  # Stop if person is on the right side or on the road and started on the right side
+    
+    elif(state["Current Person Position"] == "Left" or state["Current Person Position"] =="Middle") and state["Initial Person Position"] == "Left":
+        return 0 # Stop if person is on the left side or on the road and started on the left side
+    
     else:
         car_speed_km_h = min(state["Speed limit"], max_car_speed)
         return int(car_speed_km_h/max_car_speed *100)  # Throttle speed is calculated as a percentage of max speed of the car(NOT SIGN)
@@ -1015,7 +1150,12 @@ def main():
     weights_path = 'v4_best.pt'  # Adjust as necessary
     output_directory_base = 'detection_frames'
     
-
+    #Detection modus
+    global DOUBLE_SIDE 
+    global TRIPLE_SIDE
+    DOUBLE_SIDE = False
+    TRIPLE_SIDE = False
+    
     model, device, gui_available = initialize(weights_path, output_directory_base)
     print("GUI available: ", gui_available)
     
@@ -1023,7 +1163,10 @@ def main():
     global shared_state
     shared_state = {
         "spotted_red_light": False,
-        "Speed limit": 10
+        "Speed limit": 10,
+        "Initial Person Position": "Right", # This can be "Left" or "Right" or "Middle" or "None"
+        "Current Person Position": "Right", # This can be "Left" or "Right" or "Middle" or "None"
+        "Car Spotted": False
     }
     
     MAX_CAR_SPEED = 20
@@ -1095,7 +1238,7 @@ def main():
                 throttle_msg.data = [throttle_index, 0, 1, 0, 0, 0, 0, 0]
                 #print(detection_info)
 		
-		#Steering part
+		        #Steering part
                 lines = getLines(frame) 
                 if lines is not None:
                     lines = newLines(lines)
@@ -1131,7 +1274,7 @@ def main():
                 #activate the breaks if throttle speed is 0
                 if throttle_msg.data[0] == 0:
                 	brake_msg.data = [50, 0, 1, 0, 0, 0, 0, 0]
-                	brake_task.modify_data(brake_msg)
+                    brake_task.modify_data(brake_msg)
                 else:
                 	#Reset the breaks if throttle speed isn't 0
                 	brake_msg.data = [0, 0, 1, 0, 0, 0, 0, 0]
@@ -1177,6 +1320,9 @@ def main():
 
 
 if __name__ == '__main__':
+    #Detection modus for the object detection part
+    DOUBLE_SIDE = False
+    TRIPLE_SIDE = False
     main()
     ##session = rt.InferenceSession('drive.onnx')
     ##main(session)
