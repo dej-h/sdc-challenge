@@ -35,6 +35,11 @@ import threading
 from collections import deque
 import collections
 
+CAN_MSG_SENDING_SPEED = .040
+height = 480
+width = 848
+scale = 1 #0.5
+
 class CanListener:
     """
     A can listener that listens for specific messages and stores their latest values.
@@ -173,13 +178,13 @@ def filterContours(img):
         #area= cv2.contourArea(cnt)
         x1,y1,w,h = cv2.boundingRect(cnt)
         #rect_area = w*h
-        w = max(w,20)
-        h = max(h,20)
+        w = max(w,int(20*scale))
+        h = max(h,int(20*scale))
         #rect = img_dil[x1:x1+w,y1:y1+h]
         rect = img_dil[y1:y1+h,x1:x1+w]
         #print("RECT", rect.shape, "\twidth,height:", w, h, "\t mean:", np.mean(rect))
         density = np.mean(rect)
-        th = 50
+        th = int(scale*50)
         if w<th and h<th:
             cv2.drawContours(mask, [cnt], -1, 0, -1)
         #if density > 60:
@@ -294,7 +299,7 @@ def newLines(lines):
     nlines = []
    
     if lines is not None:
-        clusters = clusterLines(lines, 10, 15)
+        clusters = clusterLines(lines, int(scale*10), 15)
         for cluster in clusters:
             newline = combineLines(cluster)
             nlines.append(newline)
@@ -320,7 +325,7 @@ def getRoiMask(img):
     mid = width/2
     maskwd = 0#-1000
     maskwu = mid#65
-    maskh = 220#180 #180 og value
+    maskh = 220 * scale#180 #180 og value
     polygon = [(maskwd,height),(mid - maskwu, maskh),(mid + maskwu,maskh),(width-maskwd,height)]#,(width-100,height),(width - 200, height-100),(200,height-100),(100,height)]
     imgmask = Image.new('L', (width, height), 0)
     ImageDraw.Draw(imgmask).polygon(polygon, outline=1, fill=255)
@@ -435,7 +440,7 @@ def getLines(img):
     dilationkernel = np.ones((dilfactor, dilfactor), np.uint8) 
     img_masked = cv2.dilate(img_masked, dilationkernel, iterations=1) 
     
-    lines = cv2.HoughLinesP(img_masked, cv2.HOUGH_PROBABILISTIC, np.pi/180, 70,maxLineGap = 10, minLineLength = 20)
+    lines = cv2.HoughLinesP(img_masked, cv2.HOUGH_PROBABILISTIC, np.pi/180, 70,maxLineGap = int(scale*10), minLineLength = int(scale*20))
     return lines
 
 def findTarget(llines, rlines, horizonh, img, wl = 1, wr = 1, weight = 1, bias = 0, draw = 1): #returns False if non found, otherwise returns target x
@@ -502,7 +507,7 @@ def findTarget(llines, rlines, horizonh, img, wl = 1, wr = 1, weight = 1, bias =
         target = ((horizonxL*wl+horizonxR*wr)/(wl+wr))+(heightL-heightR)*weight + bias
         targetOG = ((horizonxL+horizonxR)/(2))+(heightL-heightR)*weight + bias
 
-        print("target\t", round(target-424), "\twl\t", wl, "\twr\t", wr)
+        #print("target\t", round(target-424), "\twl\t", wl, "\twr\t", wr)
         #target = ((horizonxL*wl+horizonxR*wr)/(2))+(heightL-heightR)*weight + bias
         #print("heights:\t\t\t", round(heightL), "\t", round(heightR), "\tdifference:", round(heightL-heightR), "\tTarget:",target, "\twl,wr:", wl,'\t', wr)
         if draw == 1:
@@ -803,7 +808,44 @@ def initialize(weights_path, output_dir_base):
     return quantized_model, device, gui_available
 
 
-    
+    # frame = cv2.imread(image_path)
+
+    # if frame is None:
+    #     print(f"Failed to read the image at {image_path}. Skipping.")
+    #     return None, None
+
+    # # Crop the top right portion of the image
+    # height, width, _ = frame.shape
+    # top_right_frame = frame[:height // 2, width // 2:]
+
+    # # Ensure the cropped image is resized to the desired dimensions (multiples of model's stride)
+    # stride = 32
+    # original_height, original_width = top_right_frame.shape[:2]
+    # desired_height = ((original_height // stride) + 1) * stride
+    # desired_width = ((original_width // stride) + 1) * stride
+    # resized_top_right_frame = cv2.resize(top_right_frame, (desired_width, desired_height))
+
+    # # Process the resized cropped frame with YOLOv5 detection
+    # pred, img_shape = run_inference(model, resized_top_right_frame, device)
+    # detections = process_detections(pred, resized_top_right_frame, img_shape)
+    # processed_top_right_frame = draw_bounding_boxes(resized_top_right_frame, detections, focal_length=540)
+
+    # # Resize the processed top right frame back to original dimensions
+    # processed_top_right_frame = cv2.resize(processed_top_right_frame, (original_width, original_height))
+
+    # # Place the processed top right frame back onto the original frame
+    # frame[:height // 2, width // 2:] = processed_top_right_frame
+
+    # if gui_available:
+    #     # Display the processed frame
+    #     cv2.imshow('Processed Frame', frame)
+    # else:
+    #     if frame_index % save_frequency == 0:
+    #         save_path = os.path.join(no_gui_save_dir, f"{frame_index:04d}.jpg")
+    #         cv2.imwrite(save_path, frame)
+    #         print(f"\nSaved Frame: {save_path}")
+
+    # return detections, frame
 
 def process_single_image(model, device, frame):
     global DOUBLE_SIDE
@@ -974,9 +1016,7 @@ def process_single_image(model, device, frame):
     return detection_info
 
 
-CAN_MSG_SENDING_SPEED = .040
-height = 480
-width = 848
+
 
 def traffic_object_detection(frame_queue, state_queue, model, device):
     # Set distance threshold for red light/traffic sign detection
@@ -1166,7 +1206,7 @@ def adjust_throttle(state_queue, throttle_queue, max_car_speed=20):
             with open("throttle_log.json", "a") as f:
                 f.write(json.dumps(throttle_info) + "\n")
 
-        time.sleep(0.03)
+        time.sleep(0.1)
 
 def calculate_throttle_based_on_state(state,max_car_speed=20):
     # Dummy function to calculate throttle speed based on state
@@ -1272,6 +1312,7 @@ def main():
         frame_count = 0
       
         _, frame = front_camera.read()
+        frame = cv2.resize(frame, (int(width*scale), int(height*scale)))
         hx, hy = getHorizon(frame)
         print("horizon found at",hy)
         countL = 0
@@ -1282,7 +1323,7 @@ def main():
         car_passed = False
         t0 = 0
         distance_driven = 0
-        turnsens = 0.2 #lower values means sharper turns
+        turnsens = 0.2 #higher values means sharper turns
 
         try:
             while (True):
@@ -1321,6 +1362,7 @@ def main():
                 
                 
                 #Steering part
+                frame = cv2.resize(frame, (int(width*scale), int(height*scale)))
                 lines = getLines(frame) 
                 if lines is not None:
                     lines = newLines(lines)
@@ -1437,9 +1479,9 @@ def main():
                     else:
                         Error = target - width/2
                         if Error > 0:
-                            steer_angle = min(Error/424,1.25)
+                            steer_angle = min(Error/(width/2),1.25)
                         else:
-                            steer_angle = max(Error/424,-1.25)
+                            steer_angle = max(Error/(width/2),-1.25)
             
                         
     
