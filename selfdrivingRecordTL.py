@@ -882,10 +882,11 @@ def process_single_image(model, device, frame):
         y1 += top_right_offset[0]
         x2 += top_right_offset[1]
         y2 += top_right_offset[0]
-        #Compute the real widths and heights
         
+        #Compute the real widths and heights
         real_width_m = real_widths.get(det['class'], 0.5)
         real_height_m = real_heights.get(det['class'], 0.5)
+        # Determine the distance
         distance = estimate_distance(x1,y1,x2,y2,real_width_m,real_height_m)
         detection_info.append({
             'class': det['class'],
@@ -1273,12 +1274,12 @@ def main():
                 
                 #activate the breaks if throttle speed is 0
                 if throttle_msg.data[0] == 0:
-                	brake_msg.data = [50, 0, 1, 0, 0, 0, 0, 0]
+                    brake_msg.data = [50, 0, 1, 0, 0, 0, 0, 0]
                     brake_task.modify_data(brake_msg)
                 else:
                 	#Reset the breaks if throttle speed isn't 0
-                	brake_msg.data = [0, 0, 1, 0, 0, 0, 0, 0]
-                	brake_task.modify_data(brake_msg)
+                    brake_msg.data = [0, 0, 1, 0, 0, 0, 0, 0]
+                    brake_task.modify_data(brake_msg)
                 #cv2.imshow('Camera preview', frame)
                 #cv2.waitKey(1)
                 
