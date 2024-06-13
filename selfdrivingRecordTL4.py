@@ -1220,7 +1220,7 @@ def adjust_throttle(state_queue, throttle_queue, max_car_speed=20):
             with open("throttle_log.json", "a") as f:
                 f.write(json.dumps(throttle_info) + "\n")
 
-        time.sleep(0.1)
+        time.sleep(0.03)
 
 def calculate_throttle_based_on_state(state,max_car_speed=20):
     # Dummy function to calculate throttle speed based on state
