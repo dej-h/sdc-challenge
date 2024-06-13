@@ -505,9 +505,10 @@ def findTarget(llines, rlines, horizonh, img, wl = 1, wr = 1, weight = 1, bias =
         y_h = x_h * lineparL[0] + lineparL[1]
 
 
-        
-        target = ((horizonxL*wl+horizonxR*wr)/(wl+wr))+(heightL-heightR)*weight + bias
-        targetOG = ((horizonxL+horizonxR)/(2))+(heightL-heightR)*weight + bias
+        wl = max(wl,0.01)
+        wr = max(wr,0.01)
+        #target = ((horizonxL*wl+horizonxR*wr)/(wl+wr))+(heightL-heightR)*weight + bias
+        target = ((horizonxL+horizonxR)/(2))+(heightL-heightR)*weight + bias
 
         #print("target\t", round(target-424), "\twl\t", wl, "\twr\t", wr)
         #target = ((horizonxL*wl+horizonxR*wr)/(2))+(heightL-heightR)*weight + bias
@@ -605,6 +606,11 @@ def initialize_can() -> can.Bus:
 All functions below are for the object detection part of the code
 """
 def estimate_distance(x1, y1, x2, y2, real_width, real_height, x_offset=424, y_offset=240, image_width=848, image_height=480,fov_based = False):
+    """
+    estimate_distance:
+    takes the box corner positions, the objects real width and height and other image variables to calculate the distance from the center of the 
+    car to the object
+    """
     # Constants for Logitech StreamCam
     camera_fov_h = 67.5  # Horizontal field of view in degrees
     camera_fov_v = 41.2  # Vertical field of view in degrees
@@ -659,64 +665,29 @@ def estimate_distance(x1, y1, x2, y2, real_width, real_height, x_offset=424, y_o
         
         return max((est_w_d+ est_h_d)/2 - camera_offset,0)
 
-def draw_bounding_boxes(image, detections, focal_length):
-    real_widths = {
-        'Speed-limit-10km-h': 0.6,
-        'Speed-limit-15km-h': 0.6,
-        'Speed-limit-20km-h': 0.6,
-        'Traffic Light Green': 0.07,
-        'Traffic Light Red': 0.07,
-        'Car': 1.7,
-        'Person': 0.5,
-        'Unknown': 0.5
-    }
-    real_heights = {
-        'Speed-limit-10km-h': 0.6,
-        'Speed-limit-15km-h': 0.6,
-        'Speed-limit-20km-h': 0.6,
-        'Traffic Light Green': 0.3,
-        'Traffic Light Red': 0.3,
-        'Car': 1.5,
-        'Person': 2.0,
-        'Unknown': 0.5
-        }
-    font_scale = 0.5
-    thickness = 2
 
-    for det in detections:
-        x1, y1, x2, y2 = det['bbox']
-        obj_class = det['class']
-        confidence = det['confidence']
-        label = f"{obj_class} {confidence*100:.1f}%"
-        
-        #Box width calculation
-        real_width_m = real_widths.get(obj_class, 0.5)
-        
-        #Box height caclulation
-        real_height_m = real_heights.get(obj_class,0.5)
-        
-        #Calculating the distance
-        distance = estimate_distance(x1,y1,x2,y2,real_width_m,real_height_m)
-        distance_label = f"{distance:.2f}m"
-
-        cv2.rectangle(image, (x1, y1), (x2, y2), (0, 255, 0), 2)
-        cv2.putText(image, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 0, 0), thickness)
-        cv2.putText(image, distance_label, (x1, y2 + 15), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (139, 0, 0), thickness)
-
-    return image
 
 def load_model(weights, device):
+    """
+    This function loads up a pretrained model
+    """
     model = DetectMultiBackend(weights, device=device, fp16=False) #False for CPU
     model.warmup()
     return model
 
 def quantize_model(model):
+    """
+    This model turns the model parameters from 32 bits down to 8 bits to reduce the computation load
+    """
     quantized_model = torch.quantization.quantize_dynamic(
         model, {torch.nn.Linear}, dtype=torch.qint8
     )
     return quantized_model
 
 def run_inference(model, frame, device, stride=32):
+    """
+    This function takes as input a frame and the model and gives back the predictions in yolo format 
+    """
     # Resize the image to ensure its dimensions are multiples of the model's stride
     img_size = check_img_size(frame.shape[:2], s=stride)  # Ensure multiple of stride
     img = cv2.resize(frame, (img_size[1], img_size[0]))
@@ -733,6 +704,10 @@ def run_inference(model, frame, device, stride=32):
     return pred, img.shape
 
 def process_detections(pred, frame, img_shape, conf_thres=0.80, iou_thres=0.45, max_det=1000):
+    """
+    This functions takes the model predictions, the image and its filter parameters and gives back the detections
+    classes 
+    """
     det = non_max_suppression(pred, conf_thres, iou_thres, max_det=max_det)[0]
     detections = []
 
@@ -768,6 +743,9 @@ def process_detections(pred, frame, img_shape, conf_thres=0.80, iou_thres=0.45, 
     return detections
 
 def find_next_available_dir(base_path, base_name):
+    """
+    Finds the next available directory to have as name
+    """
     counter = 0
     while True:
         new_path = os.path.join(base_path, f"{base_name}_{counter}")
@@ -776,6 +754,9 @@ def find_next_available_dir(base_path, base_name):
         counter += 1
 
 def clear_directory(directory):
+    """
+    clears a directory of images
+    """
     for filename in os.listdir(directory):
         file_path = os.path.join(directory, filename)
         try:
@@ -787,6 +768,9 @@ def clear_directory(directory):
             print(f'Failed to delete {file_path}. Reason: {e}')
 
 def initialize(weights_path, output_dir_base):
+    """
+    This function initialzes all the parts needed for object detection like the model and device (CPU)
+    """
     # Base directory for saving outputs
     os.makedirs(output_dir_base, exist_ok=True)
     print("Output Directory Created")
@@ -810,46 +794,13 @@ def initialize(weights_path, output_dir_base):
     return quantized_model, device, gui_available
 
 
-    # frame = cv2.imread(image_path)
-
-    # if frame is None:
-    #     print(f"Failed to read the image at {image_path}. Skipping.")
-    #     return None, None
-
-    # # Crop the top right portion of the image
-    # height, width, _ = frame.shape
-    # top_right_frame = frame[:height // 2, width // 2:]
-
-    # # Ensure the cropped image is resized to the desired dimensions (multiples of model's stride)
-    # stride = 32
-    # original_height, original_width = top_right_frame.shape[:2]
-    # desired_height = ((original_height // stride) + 1) * stride
-    # desired_width = ((original_width // stride) + 1) * stride
-    # resized_top_right_frame = cv2.resize(top_right_frame, (desired_width, desired_height))
-
-    # # Process the resized cropped frame with YOLOv5 detection
-    # pred, img_shape = run_inference(model, resized_top_right_frame, device)
-    # detections = process_detections(pred, resized_top_right_frame, img_shape)
-    # processed_top_right_frame = draw_bounding_boxes(resized_top_right_frame, detections, focal_length=540)
-
-    # # Resize the processed top right frame back to original dimensions
-    # processed_top_right_frame = cv2.resize(processed_top_right_frame, (original_width, original_height))
-
-    # # Place the processed top right frame back onto the original frame
-    # frame[:height // 2, width // 2:] = processed_top_right_frame
-
-    # if gui_available:
-    #     # Display the processed frame
-    #     cv2.imshow('Processed Frame', frame)
-    # else:
-    #     if frame_index % save_frequency == 0:
-    #         save_path = os.path.join(no_gui_save_dir, f"{frame_index:04d}.jpg")
-    #         cv2.imwrite(save_path, frame)
-    #         print(f"\nSaved Frame: {save_path}")
-
-    # return detections, frame
+    
 
 def process_single_image(model, device, frame):
+    """
+    This image takes a single frame and performs object detection on it and returns the detections with the class, bbox and distance
+    """
+    
     DOUBLE_SIDE = True
     TRIPLE_SIDE = False
     global OBJECT_DOWNSAMPLE_FACTOR
@@ -1038,6 +989,12 @@ def process_single_image(model, device, frame):
 
 
 def traffic_object_detection(frame_queue, state_queue, model, device, stop_event):
+    """
+    This is the main thread of object detection, it initializes the memory then it has a frame
+    queue and a state queue, it constantly takes frames from the frames queue and then appends resulting states
+    in the states queue
+    """
+    
     # Set distance threshold for red light/traffic sign detection
     red_light_distance_threshold = 5  # meters
     speed_sign_distance_threshold = 10  # meters
@@ -1087,14 +1044,14 @@ def traffic_object_detection(frame_queue, state_queue, model, device, stop_event
         
     print("Data logger Object detection ready")       
 
-    while not stop_event.is_set():
+    while True:
         if frame_queue:
             # Get the newest frame from the queue
             frame = frame_queue.pop()
             if frame is not None:
                 # Record the start time for processing
                 start_time = time.time()
-    
+
                 # Process the frame and create a new state
                 dets = process_single_image(model, device, frame)
                 
@@ -1221,7 +1178,7 @@ def traffic_object_detection(frame_queue, state_queue, model, device, stop_event
                 hour, minute, second = now.hour, now.minute, now.second
                 
                 
-                
+                # Prepare the data for
                 detection_info = {
                     "detections": dets,
                     "detect_processing_time": detect_processing_time,
@@ -1257,7 +1214,11 @@ def traffic_object_detection(frame_queue, state_queue, model, device, stop_event
     print("Object detection stopped...(got killed)")
 
 def adjust_throttle(state_queue, throttle_queue, max_car_speed=20):
+    """
+    This thread reads off the states and decides the throttle for the self driving car
+    """
     already_found_car = False
+    kill_object_detection = False
     while True:
         if state_queue:
             # Get the newest state from the queue
@@ -1296,6 +1257,9 @@ def adjust_throttle(state_queue, throttle_queue, max_car_speed=20):
         time.sleep(0.03)
 
 def calculate_throttle_based_on_state(state,max_car_speed=20):
+    """
+    This function takes the state as input and calculates the throttle value based on the state
+    """
     # Dummy function to calculate throttle speed based on state
     # Replace with your actual throttle calculation logic
     if state["spotted_red_light"]:
@@ -1316,6 +1280,10 @@ def calculate_throttle_based_on_state(state,max_car_speed=20):
         return int(car_speed_km_h/max_car_speed *100)  # Throttle speed is calculated as a percentage of max speed of the car(NOT SIGN)
 
 def main():
+    """
+    Main loop op the self driving car, populates the frame queue and writes to self driving car its steering and
+    throttle, it also initializes everything that is needed
+    """
     bus = initialize_can()
     
     cameras = initialize_cameras()
@@ -1344,8 +1312,6 @@ def main():
     #object detection init
     weights_path = 'v5_model.pt'  # Adjust as necessary
     output_directory_base = 'detection_frames'
-    
-    
     model, device, gui_available = initialize(weights_path, output_directory_base)
     print("GUI available: ", gui_available)
     
@@ -1407,9 +1373,11 @@ def main():
         #overtaking initialization 
         car_passed = False
         t0 = 0
+        tprev = 0
         distance_driven = 0
         turnsens = 0.2 #higher values means sharper turns
-
+        throttle_index = 0
+        car_spotted = False
         try:
             while (True):
                 #recording part
@@ -1434,14 +1402,14 @@ def main():
                 frame_queue.append(frame)
 
                 # Give it a value of 1 if the throttle queue is empty
-                if len(throttle_queue) == 0:
-                    throttle_queue.append(1)
-                throttle_state = throttle_queue.pop()
-                throttle_index = throttle_state['throttle']
-                car_spotted = throttle_state['car in range']
-                kill_object_detection = throttle_state['kill object detection']
-                if kill_object_detection:
-                    object_stop_event.set()
+                if len(throttle_queue) != 0:
+                  throttle_state = throttle_queue.pop()
+                  throttle_index = throttle_state['throttle']
+                  car_spotted = throttle_state['car in range']
+                  
+                  kill_object_detection = throttle_state['kill object detection']
+                #if kill_object_detection and car_passed:
+                #    object_stop_event.set()
                 
                 throttle_msg.data = [throttle_index, 0, 1, 0, 0, 0, 0, 0]
                 #print(detection_info)
@@ -1456,7 +1424,7 @@ def main():
                     lines = newLines(lines)
                     llines, rlines = splitLines(lines)
 
-                    
+                    """
                     if not llines and not rlines:#rlines is not None and llines is not None:
                         print("no llines and rlines")
                         
@@ -1530,27 +1498,33 @@ def main():
                             wr = max(wr-turnsens,0)
                             mr += 10
 
-                    
+                    """
+                    wl = 1
+                    wr = 1
                     #NEW PART (if this does not work, comment new part and uncomment old part)
-                    Steer_bias = 200
+                    Steer_bias = 300
                     if car_spotted == True and car_passed == False: 
                         if t0 == 0:
                             t0 = timestamp
-
+                            tprev = timestamp
                         tnow = timestamp - t0
                         speed = str(struct.unpack(">H", bytearray(values["speed_sensor"][:2]))[0]) if values["speed_sensor"] else ""
-                        speed = speed/36 #speed to m/s
+                        speed = int(int(speed)/36) #speed to m/s
                         distance_change = speed *(tnow - tprev)
                         distance_driven += distance_change
-
+                        #print("111111111111")
                         tprev = tnow
                         if distance_driven <7 : #first turn left
                             target = findTarget(llines, rlines, hy, frame, wl, wr,weight = 0, bias = -Steer_bias, draw = 0)
+                            print("2222222222")
                         elif distance_driven <17: # stay straight for a while
                             target = findTarget(llines, rlines, hy, frame, wl, wr,weight = 1, bias = 0, draw = 0)
+                            print("333333333")
                         elif distance_driven <24: #turn right to previous lane
                             target = findTarget(llines, rlines, hy, frame, wl, wr,weight = 0, bias = Steer_bias , draw = 0)
+                            print("444444444")
                         else:
+                            print("88888888888888")
                             car_passed = True
                     else:
                         target = findTarget(llines, rlines, hy, frame, wl, wr,weight = 1, bias = 0, draw = 0)#, ml = ml, mr = mr)#,bias = -212, draw = 1)
@@ -1567,11 +1541,11 @@ def main():
                     else:
                         Error = target - width/2
                         if Error > 0:
-                            steer_angle = min(Error/(width/2),1.25)
+                            steer_angle = min(Error/(width/2),1.15)
                         else:
-                            steer_angle = max(Error/(width/2),-1.25)
+                            steer_angle = max(Error/(width/2),-1.15)
             
-                        
+                        #ja
     
                         #print("error:", Error)
                 else:
@@ -1580,7 +1554,7 @@ def main():
                     #steering_msg = [0]*8
                     steer_angle = 0
                 #if steer_angle % 10 == 0:
-                print("steering angle", steer_angle)
+                #print("steering angle", steer_angle)
                 steering_msg.data = list(bytearray(struct.pack("f", float(steer_angle)))) + [0]*4
                 steering_task.modify_data(steering_msg)
                 throttle_task.modify_data(throttle_msg)
@@ -1631,9 +1605,7 @@ def main():
         throttle_task.stop()
         steering_task.stop()
         brake_task.stop()
-        object_stop_event.set()
-        frame_processing_thread.join()
-        throttle_adjustment_thread.join()
+        
 
 
 if __name__ == '__main__':
