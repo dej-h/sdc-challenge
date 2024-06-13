@@ -659,7 +659,7 @@ def draw_bounding_boxes(image, detections, focal_length):
         'Speed-limit-20km-h': 0.6,
         'Traffic Light Green': 0.07,
         'Traffic Light Red': 0.07,
-        'Car': 1.8,
+        'Car': 1.7,
         'Person': 0.5,
         'Unknown': 0.5
     }
@@ -669,7 +669,7 @@ def draw_bounding_boxes(image, detections, focal_length):
         'Speed-limit-20km-h': 0.6,
         'Traffic Light Green': 0.3,
         'Traffic Light Red': 0.3,
-        'Car': 1.8,
+        'Car': 1.5,
         'Person': 2.0,
         'Unknown': 0.5
         }
@@ -806,15 +806,17 @@ def initialize(weights_path, output_dir_base):
     
 
 def process_single_image(model, device, frame):
-    global DOUBLE_SIDE
-    global TRIPLE_SIDE
+    DOUBLE_SIDE = True
+    TRIPLE_SIDE = False
+    down_sample_factor = 1
+    
     real_widths = {
         'Speed-limit-10km-h': 0.6,
         'Speed-limit-15km-h': 0.6,
         'Speed-limit-20km-h': 0.6,
         'Traffic Light Green': 0.07,
         'Traffic Light Red': 0.07,
-        'Car': 3,
+        'Car': 1.7,
         'Person': 0.5,
         'Unknown': 0.5
     }
@@ -824,7 +826,7 @@ def process_single_image(model, device, frame):
         'Speed-limit-20km-h': 0.6,
         'Traffic Light Green': 0.3,
         'Traffic Light Red': 0.3,
-        'Car': 1.8,
+        'Car': 1.5,
         'Person': 2.0,
         'Unknown': 0.5
         }
@@ -848,14 +850,19 @@ def process_single_image(model, device, frame):
         return detection_info
     
     def apply_offsets(detection_info, offset):
-        for det in detection_info:
-            x1, y1, x2, y2 = det['bbox']
-            x1 += offset[1]
-            y1 += offset[0]
-            x2 += offset[1]
-            y2 += offset[0]
-            det['bbox'] = (x1, y1, x2, y2)
-        return detection_info
+            for det in detection_info:
+                x1, y1, x2, y2 = det['bbox']
+                x1 = x1 * down_sample_factor
+                y1 = y1 * down_sample_factor
+                x2 = x2 * down_sample_factor
+                y2 = y2 * down_sample_factor
+                
+                x1 += offset[1]
+                y1 += offset[0]
+                x2 += offset[1]
+                y2 += offset[0]
+                det['bbox'] = (x1, y1, x2, y2)
+            return detection_info
     
     
     # Generate dictionary with detection details
@@ -868,11 +875,12 @@ def process_single_image(model, device, frame):
     # Crop the top right portion of the image
     top_right_frame = frame[:height // 2, width // 2:]
     
+    
     # Ensure the cropped image is resized to the desired dimensions (multiples of model's stride)
     stride = 32
     original_height, original_width = top_right_frame.shape[:2]
-    desired_height = ((original_height // stride) + 1) * stride
-    desired_width = ((original_width // stride) + 1) * stride
+    desired_height = (((original_height // stride) + 1) * stride)//down_sample_factor
+    desired_width = (((original_width // stride) + 1) * stride) //down_sample_factor
     resized_top_right_frame = cv2.resize(top_right_frame, (desired_width, desired_height))
 
     # Process the resized cropped frame with YOLOv5 detection
@@ -931,7 +939,13 @@ def process_single_image(model, device, frame):
                 'bbox': det['bbox'],
                 'distance': distance
             })
-            
+        
+        #If I stop the PERSON or CAR class in the left or right image process the middle image
+        if 'Person' in [det['class'] for det in left_detection_info] or 'Person' in [det['class'] for det in right_detection_info]:
+            TRIPLE_SIDE = True
+        elif 'Car' in [det['class'] for det in left_detection_info] or 'Car' in [det['class'] for det in right_detection_info]:
+            TRIPLE_SIDE = True
+                
         if TRIPLE_SIDE:
             #Crop the top middle portion of the image
             top_middle_frame = frame[:height // 2, width // 4:3*width // 4]
@@ -1218,11 +1232,6 @@ def main():
     weights_path = 'v5_model.pt'  # Adjust as necessary
     output_directory_base = 'detection_frames'
     
-    #Detection modus
-    global DOUBLE_SIDE 
-    global TRIPLE_SIDE
-    DOUBLE_SIDE = False
-    TRIPLE_SIDE = False
     
     model, device, gui_available = initialize(weights_path, output_directory_base)
     print("GUI available: ", gui_available)
@@ -1505,8 +1514,6 @@ def main():
 
 if __name__ == '__main__':
     #Detection modus for the object detection part
-    DOUBLE_SIDE = True
-    TRIPLE_SIDE = True
     main()
     ##session = rt.InferenceSession('drive.onnx')
     ##main(session)
