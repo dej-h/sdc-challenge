@@ -703,7 +703,7 @@ def run_inference(model, frame, device, stride=32):
         pred = model(img)
     return pred, img.shape
 
-def process_detections(pred, frame, img_shape, conf_thres=0.80, iou_thres=0.45, max_det=1000):
+def process_detections(pred, frame, img_shape, conf_thres=0.70, iou_thres=0.45, max_det=1000):
     """
     This functions takes the model predictions, the image and its filter parameters and gives back the detections
     classes 
