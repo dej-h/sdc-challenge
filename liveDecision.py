@@ -452,6 +452,8 @@ def traffic_object_detection(frame_queue, state_queue, model, device,processed_f
     person_distance_threshold = 10 # meters
     car_distance_threshold = 30 # meters
 
+    # Object FPS cap
+    OBJECT_FPS_CAP = 20
     # Memory buffers for red lights and speed signs
     red_light_memory = collections.deque(maxlen=5)
     speed_sign_memory = collections.deque(maxlen=5)
@@ -682,6 +684,9 @@ def traffic_object_detection(frame_queue, state_queue, model, device,processed_f
                         detection_info["state"],
                         detection_info["cpu_usage"]
                     ])
+                # If object detection is running too fast, cap the FPS
+                if traffic_detect_processing_time < 1 / OBJECT_FPS_CAP:
+                    time.sleep(1 / OBJECT_FPS_CAP - traffic_detect_processing_time)
 
 def adjust_throttle(state_queue, throttle_queue, max_car_speed=20):
     while True:

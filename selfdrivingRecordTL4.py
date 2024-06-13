@@ -34,12 +34,14 @@ from utils.torch_utils import select_device
 import threading
 from collections import deque
 import collections
-
+import csv
+import psutil
 CAN_MSG_SENDING_SPEED = .040
 height = 480
 width = 848
 scale = 1 #0.5
-
+OBJECT_FPS_CAP = 20
+OBJECT_DOWNSAMPLE_FACTOR = 2
 class CanListener:
     """
     A can listener that listens for specific messages and stores their latest values.
@@ -850,7 +852,8 @@ def initialize(weights_path, output_dir_base):
 def process_single_image(model, device, frame):
     DOUBLE_SIDE = True
     TRIPLE_SIDE = False
-    down_sample_factor = 1
+    global OBJECT_DOWNSAMPLE_FACTOR
+    down_sample_factor = OBJECT_DOWNSAMPLE_FACTOR
     
     real_widths = {
         'Speed-limit-10km-h': 0.6,
@@ -987,6 +990,8 @@ def process_single_image(model, device, frame):
             TRIPLE_SIDE = True
         elif 'Car' in [det['class'] for det in left_detection_info] or 'Car' in [det['class'] for det in right_detection_info]:
             TRIPLE_SIDE = True
+        else: 
+            TRIPLE_SIDE = False
                 
         if TRIPLE_SIDE:
             #Crop the top middle portion of the image
@@ -1032,13 +1037,15 @@ def process_single_image(model, device, frame):
 
 
 
-def traffic_object_detection(frame_queue, state_queue, model, device):
+def traffic_object_detection(frame_queue, state_queue, model, device, stop_event):
     # Set distance threshold for red light/traffic sign detection
     red_light_distance_threshold = 5  # meters
     speed_sign_distance_threshold = 10  # meters
     person_distance_threshold = 10 # meters
     car_distance_threshold = 10 # meters
 
+    # FPS CAP
+    global FPS_CAP
     # Memory buffers for red lights and speed signs
     red_light_memory = collections.deque(maxlen=5)
     speed_sign_memory = collections.deque(maxlen=5)
@@ -1054,8 +1061,33 @@ def traffic_object_detection(frame_queue, state_queue, model, device):
     # Car
     car_spotted = False
     
+     # Data Logger
+       # Define the headers for the CSV file
+    headers = ["detections", "detect_processing_time", "traffic_processing_time", 
+               "year", "month", "day", "hour", "minute", "second", "state", "cpu_usage"]
+    
+    
+        # Create a new folder named with the current date and time
+    now = datetime.now()
+    folder_name = now.strftime("%m_%d_%H")
+    os.makedirs(folder_name, exist_ok=True)
+    
+    # Create a new CSV file within the new folder, also named with the current date and time
+    file_name = now.strftime("%Y_%m_%d_%H_%M_%S") + "_detection_log.csv"
+    file_path = os.path.join(folder_name, file_name)
+    
+    # Define the headers for the CSV file
+    headers = ["detections", "detect_processing_time", "traffic_processing_time", 
+               "year", "month", "day", "hour", "minute", "second", "state", "cpu_usage"]
+    
+    # Create the CSV file and write the headers
+    with open(file_path, "w", newline='') as f:
+        writer = csv.writer(f)
+        writer.writerow(headers)
+        
+    print("Data logger Object detection ready")       
 
-    while True:
+    while not stop_event.is_set():
         if frame_queue:
             # Get the newest frame from the queue
             frame = frame_queue.pop()
@@ -1069,7 +1101,7 @@ def traffic_object_detection(frame_queue, state_queue, model, device):
                 
                 # Record the end time for processing and calculate the duration
                 end_time = time.time()
-                processing_time = end_time - start_time
+                detect_processing_time = end_time - start_time
     
                 # Local loop variables for checking closest traffic lights and signs
                 # Speed signs
@@ -1175,20 +1207,57 @@ def traffic_object_detection(frame_queue, state_queue, model, device):
                 
     
                 state_queue.append(new_state)
-                print(f"Updated shared_state: {new_state}")
-    
-                # Save the detection information to a file
+                #print(f"Updated shared_state: {new_state}")
+                end_time = time.time()
+                
+                traffic_detect_processing_time = end_time - start_time
+                
+                # Measure CPU usage
+                cpu_usage = psutil.cpu_percent(interval=None)
+             
+                # Extract the current timestamp and break it into components
+                now = datetime.now()
+                year, month, day = now.year, now.month, now.day
+                hour, minute, second = now.hour, now.minute, now.second
+                
+                
+                
                 detection_info = {
                     "detections": dets,
-                    "processing_time": processing_time,
-                    "timestamp": datetime.now().isoformat(),
-                    "state": new_state
+                    "detect_processing_time": detect_processing_time,
+                    "traffic_processing_time": traffic_detect_processing_time,
+                    "year": year,
+                    "month": month,
+                    "day": day,
+                    "hour": hour,
+                    "minute": minute,
+                    "second": second,
+                    "state": new_state,
+                    "cpu_usage": cpu_usage
                 }
-    
-                with open("detection_log.json", "a") as f:
-                    f.write(json.dumps(detection_info) + "\n")
+                
+                with open(file_path, "a", newline='') as f:
+                    writer = csv.writer(f)
+                    writer.writerow([
+                        detection_info["detections"],
+                        detection_info["detect_processing_time"],
+                        detection_info["traffic_processing_time"],
+                        detection_info["year"],
+                        detection_info["month"],
+                        detection_info["day"],
+                        detection_info["hour"],
+                        detection_info["minute"],
+                        detection_info["second"],
+                        detection_info["state"],
+                        detection_info["cpu_usage"]
+                    ])
+                # If object detection is running too fast, cap the FPS
+                if traffic_detect_processing_time < 1 / OBJECT_FPS_CAP:
+                    time.sleep(1 / OBJECT_FPS_CAP - traffic_detect_processing_time)
+    print("Object detection stopped...(got killed)")
 
 def adjust_throttle(state_queue, throttle_queue, max_car_speed=20):
+    already_found_car = False
     while True:
         if state_queue:
             # Get the newest state from the queue
@@ -1199,12 +1268,16 @@ def adjust_throttle(state_queue, throttle_queue, max_car_speed=20):
             car_in_range = False
             if new_state['Car Spotted']:
                 car_in_range = True
-                
+                already_found_car = True
+            if (new_state["Speed limit"] == 15) and already_found_car:
+                kill_object_detection = True
             if len(throttle_queue) >= 1:
                 throttle_queue.pop()
             throttle_state = {
                 "throttle": throttle_speed,
-                "car in range": car_in_range}
+                "car in range": car_in_range,
+                "kill object detection": kill_object_detection
+                }
             
             throttle_queue.append(throttle_state)
 
@@ -1228,9 +1301,9 @@ def calculate_throttle_based_on_state(state,max_car_speed=20):
     if state["spotted_red_light"]:
         return 0  # Stop if red light is spotted
     
-    elif state["Car Spotted"]:
-        #TODO: Implement logic to slow down if a car is spotted
-        return 10
+    # elif state["Car Spotted"]:
+    #     #TODO: Implement logic to slow down if a car is spotted
+    #     return 10
     
     elif (state["Current Person Position"] == "Right" or state["Current Person Position"] =="Middle") and state["Initial Person Position"] == "Right":
         return 0  # Stop if person is on the right side or on the road and started on the right side
@@ -1289,15 +1362,18 @@ def main():
     MAX_CAR_SPEED = 20
 
     # Deques for state and frame queues with a maximum length
-    queue_maxsize = 5
+    queue_maxsize = 3
     state_queue = deque(maxlen=queue_maxsize)
     frame_queue = deque(maxlen=queue_maxsize)
 
     # Shared queue for throttle speed
     throttle_queue = deque(maxlen=1)
 
+    # Create a stop event
+    object_stop_event = threading.Event()
+    
     # Initialize the threads for frame processing and throttle adjustment
-    frame_processing_thread = threading.Thread(target=traffic_object_detection, args=(frame_queue, state_queue,model,device))
+    frame_processing_thread = threading.Thread(target=traffic_object_detection, args=(frame_queue, state_queue,model,device,object_stop_event))
     throttle_adjustment_thread = threading.Thread(target=adjust_throttle, args=(state_queue, throttle_queue,MAX_CAR_SPEED))
 
     # Start the threads
@@ -1363,7 +1439,10 @@ def main():
                 throttle_state = throttle_queue.pop()
                 throttle_index = throttle_state['throttle']
                 car_spotted = throttle_state['car in range']
-
+                kill_object_detection = throttle_state['kill object detection']
+                if kill_object_detection:
+                    object_stop_event.set()
+                
                 throttle_msg.data = [throttle_index, 0, 1, 0, 0, 0, 0, 0]
                 #print(detection_info)
                 #TODO: Car passing CODE HERE use the car_spotted variable to see if car is within 10 meters of range
@@ -1552,6 +1631,9 @@ def main():
         throttle_task.stop()
         steering_task.stop()
         brake_task.stop()
+        object_stop_event.set()
+        frame_processing_thread.join()
+        throttle_adjustment_thread.join()
 
 
 if __name__ == '__main__':
