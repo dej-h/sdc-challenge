@@ -14,15 +14,16 @@ import time
 import threading
 import queue
 import math
-from models.common import DetectMultiBackend
-from utils.general import non_max_suppression, scale_boxes, check_img_size
-from utils.torch_utils import select_device
+from yolov5.models.common import DetectMultiBackend
+from yolov5.utils.general import non_max_suppression, scale_boxes, check_img_size
+from yolov5.utils.torch_utils import select_device
 from collections import deque
 import  collections
 from datetime import datetime
 import json
 import csv
 import psutil
+
 #Calculate distance based of detection and real life widths and heights
 def estimate_distance(x1, y1, x2, y2, real_width, real_height, x_offset=424, y_offset=240, image_width=848, image_height=480,fov_based = False):
     # Constants for Logitech StreamCam
@@ -101,7 +102,8 @@ def run_inference(model, frame, device, stride=32):
     
     end_preprocessing = time.time()
     preprocessing_time = end_preprocessing - start_preprocessing
-    #print(f"Preprocessing Time: {preprocessing_time:.4f} seconds /n")
+    #print(f"Preprocessing Time: {preprocessing_time:.4f} seconds ")
+   # print("")
     
     # Measure time for prediction
     start_prediction = time.time()
@@ -111,12 +113,13 @@ def run_inference(model, frame, device, stride=32):
     
     end_prediction = time.time()
     prediction_time = end_prediction - start_prediction
-    #print(f"Prediction Time: {prediction_time:.4f} seconds")
-    
+   # print(f"Prediction Time: {prediction_time:.4f} seconds")
+   # print("")
+   # print("")
     return pred, img.shape
 
 # This function takes the prediction and turns it processes it to object detection
-def process_detections(pred, frame, img_shape, conf_thres=0.80, iou_thres=0.45, max_det=1000):
+def process_detections(pred, frame, img_shape, conf_thres=0.6 , iou_thres=0.45, max_det=1000):
     
     det = non_max_suppression(pred, conf_thres, iou_thres, max_det=max_det)[0]
     detections = []
@@ -203,10 +206,10 @@ def draw_bounding_boxes(image, detections, down_sample_factor,offset, focal_leng
         t_y2 = y2 - offset[0]
         
         #Draw it back on properly
-        t_x1 = t_x1 // down_sample_factor
-        t_y1 = t_y1 // down_sample_factor
-        t_x2 = t_x2 // down_sample_factor
-        t_y2 = t_y2 // down_sample_factor
+        t_x1 = int(t_x1 // down_sample_factor)
+        t_y1 = int(t_y1 // down_sample_factor)
+        t_x2 = int(t_x2 // down_sample_factor)
+        t_y2 = int(t_y2 // down_sample_factor)
         
         cv2.rectangle(image, (t_x1, t_y1), (t_x2, t_y2), (0, 255, 0), 2)
         cv2.putText(image, label, (t_x1, t_y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 0, 0), thickness)
@@ -235,6 +238,7 @@ def quantize_model(model):
     quantized_model = torch.quantization.quantize_dynamic(
         model, {torch.nn.Linear}, dtype=torch.qint8
     )
+    print("Quantization complete")
     return quantized_model
 
 #initializes the model  and returns the model, device and according directories
@@ -259,6 +263,7 @@ def initialize(weights_path, output_dir_base, no_gui_save_dir):
     
    
     quantized_model = quantize_model(model)
+    
     print("Done optimizing model")
     # Check if GUI is available
     gui_available = False
@@ -301,12 +306,17 @@ def process_image(model, device, input_image, gui_available):
     
     #Down sample
     
-    down_sample_factor = 2
+    down_sample_factor = 1
     # Ensure the cropped image is resized to the desired dimensions (multiples of model's stride)
     stride = 32
     original_height, original_width = top_right_frame.shape[:2]
-    desired_height = (((original_height // stride) + 1) * stride) // down_sample_factor
-    desired_width = (((original_width // stride) + 1) * stride) // down_sample_factor
+    # Downsample first
+    downsampled_height = int(original_height // down_sample_factor)
+    downsampled_width = int(original_width // down_sample_factor)
+    
+    # Calculate new dimensions to be multiples of the stride
+    desired_height = (downsampled_height // stride + 1) * stride
+    desired_width = (downsampled_width // stride + 1) * stride
     
     #Resizing
     resized_top_right_frame = cv2.resize(top_right_frame, (desired_width, desired_height))
@@ -332,10 +342,10 @@ def process_image(model, device, input_image, gui_available):
     def apply_offsets(detection_info, offset):
             for det in detection_info:
                 x1, y1, x2, y2 = det['bbox']
-                x1 = x1 * down_sample_factor
-                y1 = y1 * down_sample_factor
-                x2 = x2 * down_sample_factor
-                y2 = y2 * down_sample_factor
+                x1 = int(x1 * down_sample_factor)
+                y1 = int(y1 * down_sample_factor)
+                x2 = int(x2 * down_sample_factor)
+                y2 = int(y2 * down_sample_factor)
                 
                 x1 += offset[1]
                 y1 += offset[0]
@@ -453,7 +463,12 @@ def traffic_object_detection(frame_queue, state_queue, model, device,processed_f
     car_distance_threshold = 30 # meters
 
     # Object FPS cap
-    OBJECT_FPS_CAP = 20
+    OBJECT_FPS_CAP = 30
+    
+    total_time = 0
+    total_frames =0
+    total_cpu_usage = 0
+    total_rss_mem =0
     # Memory buffers for red lights and speed signs
     red_light_memory = collections.deque(maxlen=5)
     speed_sign_memory = collections.deque(maxlen=5)
@@ -496,6 +511,7 @@ def traffic_object_detection(frame_queue, state_queue, model, device,processed_f
     print("Data loggers ready")       
     while True:
         if frame_queue:
+            total_frames += 1
             # Get the newest frame from the queue
             frame = frame_queue.popleft()
             if frame is not None:
@@ -619,9 +635,25 @@ def traffic_object_detection(frame_queue, state_queue, model, device,processed_f
                 
                 traffic_detect_processing_time = end_time - start_time
                 
+                total_time += traffic_detect_processing_time
                 # Measure CPU usage
                 cpu_usage = psutil.cpu_percent(interval=None)
+                total_cpu_usage += cpu_usage
+                #Measure RAM Usage
+                # Get the process ID of the current script
+                process = psutil.Process()
                 
+                # Get the memory info
+                memory_info = process.memory_info()
+                
+                # Convert bytes to gigabytes
+                rss_gb = memory_info.rss / (1024 ** 3)  # Resident Set Size in GB
+                vms_gb = memory_info.vms / (1024 ** 3)  # Virtual Memory Size in GB
+                
+                total_rss_mem += rss_gb
+                # Print memory usage in gigabytes
+                #print(f"RSS: {rss_gb:.4f} GB")  # Resident Set Size
+                #print(f"VMS: {vms_gb:.4f} GB")  # Virtual Memory Size
                 # Display the current state on the frame
                 state_text = (
                     f"Red Light: {saw_red_light}\n"
@@ -629,20 +661,22 @@ def traffic_object_detection(frame_queue, state_queue, model, device,processed_f
                     f"Initial Person Position: {initial_person_position}\n"
                     f"Current Person Position: {current_person_position}\n"
                     f"Car Within Treshold: {car_spotted}\n"
-                    f"CPU Usage: {cpu_usage}\n"
-                    f"FPS: {1/traffic_detect_processing_time}"
+                    f"CPU Usage: {total_cpu_usage/total_frames:.2f}\n"
+                    f"FPS: {total_frames/total_time:.2f}\n"
+                    f"RAM: {total_rss_mem/total_frames:.2f} GB"
+                    
                 )
                 
                 # Define the starting position
-                x, y = 10, frame.shape[0] - 150  # Adjust y to fit all lines within the frame
+                x, y = 10, frame.shape[0] - 170  # Adjust y to fit all lines within the frame
                 
                 # Split the state text into lines
                 for i, line in enumerate(state_text.split('\n')):
-                    cv2.putText(frame, line, (x, y + (i * 20)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1, cv2.LINE_AA)
+                    cv2.putText(frame, line, (x, y + (i * 20)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 200), 1, cv2.LINE_AA)
                 
                 # Save the frame to an image file for testing
                 #cv2.imwrite('test2.png', frame)
-                print("sending frames")
+                #print("sending frames")
                 processed_frame_queue.append(frame)
                 
                # Show the frame with the current state
@@ -768,23 +802,23 @@ def clear_directory(directory):
 def main():
     print("Starting...")
     # Initialization of the model
-    weights_path = 'v5_model.pt'
-    output_directory_base = 'detection_frames'
-    no_gui_save_dir= '/home/sdc/Documents/ANNOTATED_IMAGES'
+    weights_path = './sdc-challenge/v5_model.pt'
+    output_directory_base = './sd-challenge/test-venv/detection_frames' # Used to save the detections that can be used to create the database
+    no_gui_save_dir= './sd-challenge/test-venv/ANNOTATED_IMAGES'
     input_type = 'image_directory'
-    input_source = "/home/sdc/Documents/latest_recording"
-    
+    input_source = "/home/sdc/Documents/recent_recording_front"
+    #input_source = "/home/sdc/Documents/recording 13-06-2024 11-54-31/front"
     print("Initilazing model...")
     model, device, detections_dir, no_gui_save_dir, gui_available = initialize(weights_path, output_directory_base, no_gui_save_dir)
     print("GUI available: ", gui_available)
-    gui_available = True
+    #gui_available = True
     
     # Start up of decision making threads
     # Shared state and queues
     global shared_state
     shared_state = {
         "spotted_red_light": False,
-        "Speed limit": 10,
+        "Speed limit": 8,
         "Initial Person Position": "None", # This can be "Left" or "Right" or "Middle" or "None"
         "Current Person Position": "None", # This can be "Left" or "Right" or "Middle" or "None"
         "Car Spotted": False
