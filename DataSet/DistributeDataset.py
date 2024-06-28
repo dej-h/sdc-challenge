@@ -9,25 +9,30 @@ OUTPUT_FOLDER -> train -> images
                     valid -> images
                         -> labels
 """
-
-
 import os
 import shutil
 import numpy as np
 from sklearn.model_selection import train_test_split
-import zipfile
 import yaml
 
-
 def distribute_dataset(source_folder, destination_folder, split_ratio=(0.7, 0.2, 0.1)):
-    
     # Check if the split ratio is valid
-    assert round(sum(split_ratio),10) == 1, "The split ratio must sum up to 1"
+    assert round(sum(split_ratio), 10) == 1, "The split ratio must sum up to 1"
     
-    # Copy over the yaml file with the correct directory
-    update_yaml_file(os.path.join(source_folder, 'data.yaml'), os.path.join(destination_folder, 'data.yaml'), destination_folder)
+    # Create the destination directory if it doesn't exist
+    os.makedirs(destination_folder, exist_ok=True)
     
-    # Copy over the yaml file with the correct directory
+    # Define the path for the YAML file
+    source_yaml_file = os.path.join(source_folder, 'data.yaml')
+    destination_yaml_file = os.path.join(destination_folder, 'data.yaml')
+    
+    # Check if the source YAML file exists
+    if not os.path.isfile(source_yaml_file):
+        raise FileNotFoundError(f"The source YAML file does not exist: {source_yaml_file}")
+    
+    # Copy and update the YAML file with the correct directory
+    update_yaml_file(source_yaml_file, destination_yaml_file, destination_folder)
+    
     # Define the subfolders for images and labels within each dataset split
     subfolders = ['images', 'labels']
 
@@ -49,6 +54,12 @@ def distribute_dataset(source_folder, destination_folder, split_ratio=(0.7, 0.2,
     # Prepare to distribute images and labels
     images_folder = os.path.join(source_folder, 'images')
     labels_folder = os.path.join(source_folder, 'labels')
+
+    # Check if the images and labels directories exist
+    if not os.path.isdir(images_folder):
+        raise FileNotFoundError(f"The images folder does not exist: {images_folder}")
+    if not os.path.isdir(labels_folder):
+        raise FileNotFoundError(f"The labels folder does not exist: {labels_folder}")
 
     # Dictionary to keep track of image data by class
     class_images = {}
@@ -96,29 +107,18 @@ def distribute_dataset(source_folder, destination_folder, split_ratio=(0.7, 0.2,
     print(f"Test: {image_count['test']} images")
     print(f"Valid: {image_count['valid']} images")
 
-    # # Create a zip archive of the distributed dataset
-    # zip_filename = f"{destination_folder}.zip"
-    # with zipfile.ZipFile(zip_filename, 'w', zipfile.ZIP_DEFLATED) as zipf:
-    #     for root, dirs, files in os.walk(destination_folder):
-    #         for file in files:
-    #             abs_path = os.path.join(root, file)
-    #             rel_path = os.path.relpath(abs_path, os.path.join(destination_folder, '..'))
-    #             zipf.write(abs_path, rel_path)
-    
-    # print(f"Created zip archive: {zip_filename}")
-
 def update_yaml_file(input_yaml_path, output_yaml_path, base_path):
     with open(input_yaml_path, 'r') as file:
         data = yaml.safe_load(file)
 
     # Update the val path
-    data['val'] = base_path + '/valid/images'
+    data['val'] = os.path.join(base_path, 'valid/images')
     
     # Update the train path
-    data['train'] = base_path + '/train/images'
+    data['train'] = os.path.join(base_path, 'train/images')
     
     # Update the test path
-    data['test'] = base_path + '/test/images'
+    data['test'] = os.path.join(base_path, 'test/images')
 
     # Write the updated data to the new yaml file
     with open(output_yaml_path, 'w') as file:
@@ -126,8 +126,8 @@ def update_yaml_file(input_yaml_path, output_yaml_path, base_path):
 
 # Example Usage
 # Define the source and destination folders
-source_folder = './sdc-challenge/DataSet/AugmentedDataset'
-destination_folder = './sdc-challenge/DataSet/DistributedDataset'
+source_folder = './sdc-challenge/DataSet/AugmentedDataset/'
+destination_folder = './sdc-challenge/DataSet/DistributedDataset/'
 
 # Define the split ratio for train, test, and validation sets
 TRAIN_SPLIT = 0.7 # 70% of the data for training
