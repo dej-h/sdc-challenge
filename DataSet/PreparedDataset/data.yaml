@@ -1,0 +1,7 @@
+train: ../sdc-challenge/DataSet/PreparedDataset/train/images
+val: ../sdc-challenge/DataSet/PreparedDataset/valid/images
+test: ../sdc-challenge/DataSet/PreparedDataset/test/images
+
+nc: 7
+names: ['Car', 'Person', 'Speed-limit-10km-h-', 'Speed-limit-15km-h-', 'Speed-limit-20km-h-', 'TrafficLight-green', 'TrafficLight-red']
+
